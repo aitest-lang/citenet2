@@ -11,6 +11,7 @@ python manage.py collectstatic --noinput
 python manage.py migrate
 
 # Create a superuser if it doesn't exist
+python manage.py createsuperuser --noinput
 
 
 # Set the superuser password
