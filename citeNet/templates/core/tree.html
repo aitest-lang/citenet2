@@ -1,0 +1,677 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Reference Graph</title>
+  <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      margin: 0;
+      padding: 20px;
+      background-color: #f5f8fa;
+    }
+    
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      background-color: white;
+      border-radius: 8px;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+      padding: 20px;
+    }
+    
+    h1 {
+      color: #2c3e50;
+      margin-top: 0;
+    }
+    
+    .controls {
+      margin-bottom: 20px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    
+    input, button {
+      padding: 8px 12px;
+      border-radius: 4px;
+    }
+    
+    input {
+      border: 1px solid #ddd;
+      width: 60px;
+    }
+    
+    button {
+      background-color: #3498db;
+      color: white;
+      border: none;
+      cursor: pointer;
+      transition: background-color 0.3s;
+    }
+    
+    button:hover {
+      background-color: #2980b9;
+    }
+    
+    svg {
+      background-color: #fff;
+      border-radius: 4px;
+      border: 1px solid #eee;
+    }
+
+    .node {
+      stroke: #fff;
+      stroke-width: 2px;
+      transition: r 0.3s, fill 0.3s;
+    }
+    
+    .node:hover {
+      stroke: #333;
+      cursor: pointer;
+    }
+    
+    .root-node {
+      fill: #e74c3c;
+    }
+    
+    .node-level-1 {
+      fill: #3498db;
+    }
+    
+    .node-level-2 {
+      fill: #2ecc71;
+    }
+    
+    .node-level-3 {
+      fill: #f39c12;
+    }
+    
+    .node-level-4 {
+      fill: #9b59b6;
+    }
+    
+    .node-level-5 {
+      fill: #1abc9c;
+    }
+    
+    .link {
+      stroke: #bdc3c7;
+      stroke-opacity: 0.6;
+      stroke-width: 1.5px;
+      transition: stroke-width 0.3s, stroke-opacity 0.3s;
+    }
+    
+    .link:hover {
+      stroke-width: 2.5px;
+      stroke-opacity: 1;
+    }
+    
+    .label {
+      font-size: 12px;
+      fill: #555;
+      pointer-events: none;
+      user-select: none;
+    }
+    
+    .tooltip {
+      position: absolute;
+      padding: 10px;
+      background-color: rgba(0, 0, 0, 0.8);
+      color: white;
+      border-radius: 4px;
+      font-size: 14px;
+      max-width: 300px;
+      z-index: 10;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.3s;
+    }
+    .loading-container {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background-color: rgba(255, 255, 255, 0.9);
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      z-index: 1000;
+    }
+    
+    .spinner {
+      width: 50px;
+      height: 50px;
+      border: 5px solid #f3f3f3;
+      border-top: 5px solid #3498db;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin-bottom: 20px;
+    }
+    
+    .progress-container {
+      width: 300px;
+      margin-top: 20px;
+    }
+    
+    .progress-bar {
+      width: 100%;
+      background-color: #f3f3f3;
+      border-radius: 4px;
+      overflow: hidden;
+    }
+    
+    .progress {
+      height: 10px;
+      background-color: #3498db;
+      width: 0%;
+      transition: width 0.3s;
+    }
+    
+    .progress-text {
+      text-align: center;
+      margin-top: 5px;
+      font-size: 14px;
+      color: #555;
+    }
+    
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    .save-button {
+            position: fixed;
+            top: 10px;
+            right: 10px;
+            padding: 10px 20px;
+            background-color: #007BFF;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        .save-button:hover {
+            background-color: #0056b3;
+        }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <a href="{% url 'search' %}"><h1>Go back to Home</h1></a>
+    <button class="save-button" id="saveHistoryBtn">Save History</button>
+    <div hidden id="search-id">{{search_id}}</div>
+    <div id="tooltip" class="tooltip"></div>
+    <svg width="1200" height="800"></svg>
+  </div>
+
+  <div id="loading-screen" class="loading-container">
+    <div class="spinner"></div>
+    <h2>Building Reference Graph</h2>
+    <p>Please wait while we fetch and process the references...</p>
+    <div class="progress-container">
+      <div class="progress-bar">
+        <div id="progress" class="progress"></div>
+      </div>
+      <div id="progress-text" class="progress-text">Initializing...</div>
+    </div>
+  </div>
+  
+  <script>
+document.addEventListener("DOMContentLoaded", function() {
+    const svg = d3.select("svg");
+  const width = +svg.attr("width");
+  const height = +svg.attr("height");
+  const tooltip = d3.select("#tooltip");
+  const search_id = document.getElementById("search-id").textContent;
+  const loadingScreen = document.getElementById("loading-screen");
+  const progressBar = document.getElementById("progress");
+  const progressText = document.getElementById("progress-text");
+  var graphData;
+
+  // Cache to store fetched paper details and references
+  const cache = {};
+  document.getElementById('saveHistoryBtn').addEventListener('click', async function() {
+    // Create a structured format that preserves all necessary information
+    const dataToSave = {
+        nodes: graphData.nodes.map(node => ({
+            id: node.id,
+            title: node.title,
+            level: node.level
+        })),
+        links: graphData.links.map(link => ({
+            source: typeof link.source === 'object' ? link.source.id : link.source,
+            target: typeof link.target === 'object' ? link.target.id : link.target
+        })),
+        rootId: search_id
+    };
+    
+    try {
+        const response = await fetch('/save-history', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(dataToSave)
+        });
+        
+        if (response.ok) {
+            // Show success message
+            const saveConfirmation = d3.select("body")
+                .append("div")
+                .attr("class", "save-confirmation")
+                .style("position", "fixed")
+                .style("top", "20px")
+                .style("left", "50%")
+                .style("transform", "translateX(-50%)")
+                .style("background-color", "rgba(46, 204, 113, 0.9)")
+                .style("color", "white")
+                .style("padding", "10px 20px")
+                .style("border-radius", "4px")
+                .style("z-index", "1000")
+                .style("box-shadow", "0 2px 10px rgba(0,0,0,0.2)")
+                .style("opacity", "0")
+                .style("transition", "opacity 0.3s")
+                .text("Graph saved successfully!");
+
+            saveConfirmation
+                .transition()
+                .style("opacity", "1")
+                .duration(300);
+
+            setTimeout(() => {
+                saveConfirmation
+                    .transition()
+                    .style("opacity", "0")
+                    .duration(300)
+                    .on("end", function() {
+                        saveConfirmation.remove();
+                    });
+            }, 2000);
+        } else {
+            console.error('Failed to save graph data');
+        }
+    } catch (error) {
+        console.error('Error saving graph data:', error);
+    }
+});
+  const requestQueue = [];
+  let isProcessingQueue = false;
+  const requestDelay = 800; // 800 milli second between requests
+  let totalRequests = 0;
+  let completedRequests = 0;
+
+  function updateProgress(message, percent) {
+    progressBar.style.width = `${percent}%`;
+    progressText.textContent = message;
+  }
+  
+  // Function to process the request queue with rate limiting
+  async function processQueue() {
+    if (isProcessingQueue || requestQueue.length === 0) return;
+    
+    isProcessingQueue = true;
+    const { url, callback } = requestQueue.shift();
+    
+    try {
+      updateProgress(`Processing request ${completedRequests + 1} of ${totalRequests}...`, (completedRequests / totalRequests) * 100);
+      const response = await axios.get(url);
+      completedRequests++;
+      callback(response);
+    } catch (error) {
+      completedRequests++;
+      callback({ error });
+    }
+    
+    // Wait before processing next request
+    setTimeout(() => {
+      isProcessingQueue = false;
+      processQueue();
+    }, requestDelay);
+  }
+  
+  // Function to add request to queue
+  function queueRequest(url) {
+    return new Promise((resolve) => {
+      totalRequests++;
+      requestQueue.push({
+        url,
+        callback: (response) => resolve(response)
+      });
+      
+      if (!isProcessingQueue) {
+        processQueue();
+      }
+    });
+  }
+
+  // Function to copy text to clipboard
+  function copyToClipboard(text) {
+    navigator.clipboard.writeText(text).then(
+      function() {
+        // Show confirmation
+        const copyConfirmation = d3.select("body")
+          .append("div")
+          .attr("class", "copy-confirmation")
+          .style("position", "fixed")
+          .style("top", "20px")
+          .style("left", "50%")
+          .style("transform", "translateX(-50%)")
+          .style("background-color", "rgba(46, 204, 113, 0.9)")
+          .style("color", "white")
+          .style("padding", "10px 20px")
+          .style("border-radius", "4px")
+          .style("z-index", "1000")
+          .style("box-shadow", "0 2px 10px rgba(0,0,0,0.2)")
+          .style("opacity", "0")
+          .style("transition", "opacity 0.3s")
+          .text("Title copied to clipboard!");
+
+        copyConfirmation
+          .transition()
+          .style("opacity", "1")
+          .duration(300);
+
+        setTimeout(() => {
+          copyConfirmation
+            .transition()
+            .style("opacity", "0")
+            .duration(300)
+            .on("end", function() {
+              copyConfirmation.remove();
+            });
+        }, 2000);
+      },
+      function(err) {
+        console.error('Could not copy text: ', err);
+      }
+    );
+  }
+
+  // Fetch paper details by paperId with caching
+   async function fetchPaperDetails(paperId) {
+    if (cache[paperId]) return cache[paperId];
+    try {
+      const response = await queueRequest(`https://api.semanticscholar.org/graph/v1/paper/${paperId}`);
+      if (response.error) throw response.error;
+      const data = response.data;
+      if (!data.title) data.title = "";
+      cache[paperId] = data;
+      return data;
+    } catch (error) {
+      console.warn(`No data available for paper ID: ${paperId}`);
+      cache[paperId] = { paperId, title: "" };
+      return cache[paperId];
+    }
+  }
+
+  // Recursive function to fetch reference data up to a given depth with caching
+  async function fetchReferences(paperId, depth = 3, currentLevel = 0) {
+    if (depth === 0) return null;
+    if (cache[paperId]?.children) return cache[paperId];
+    try {
+      updateProgress(`Fetching references for level ${currentLevel + 1}...`, Math.min(90, (completedRequests / totalRequests) * 100));
+      const response = await queueRequest(`https://api.semanticscholar.org/graph/v1/paper/${paperId}/references?limit=2`);
+      if (response.error) throw response.error;
+      
+      const apiData = response.data;
+      const node = { id: paperId, title: "", children: [], level: currentLevel };
+      
+      // Process references sequentially rather than in parallel to avoid overwhelming the API
+      for (let i = 0; i < apiData.data.length; i++) {
+        const item = apiData.data[i];
+        const childPaperId = item.citedPaper.paperId;
+        const childDetails = await fetchPaperDetails(childPaperId);
+        const childNode = await fetchReferences(childPaperId, depth - 1, currentLevel + 1);
+        
+        if (childDetails.title || (childNode && childNode.children.length > 0)) {
+          node.children.push({
+            id: childPaperId,
+            title: childDetails.title || "",
+            children: childNode ? childNode.children : [],
+            level: currentLevel + 1
+          });
+        }
+      }
+      
+      cache[paperId] = node;
+      return node;
+    } catch (error) {
+      console.warn(`No references available for paper ID: ${paperId}`);
+      cache[paperId] = { id: paperId, title: "", children: [], level: currentLevel };
+      return cache[paperId];
+    }
+  }
+
+  // Function to flatten the tree structure into nodes and links
+  function buildGraph(root) {
+    const nodes = [];
+    const links = [];
+
+    function traverse(node, parentId = null) {
+      // Skip nodes with no title and no children
+      if (!node.title && node.children.length === 0) return;
+      // Add node data including level
+      nodes.push({ 
+        id: node.id, 
+        title: node.title, 
+        level: node.level || 0 
+      });
+      if (parentId !== null) {
+        links.push({ source: parentId, target: node.id });
+      }
+      node.children.forEach(child => traverse(child, node.id));
+    }
+    traverse(root);
+    return { nodes, links };
+  }
+
+  // Main function to initialize the graph and output JSON data
+  async function initGraph() {
+    const rootPaperId = search_id;
+    const depth = 5;
+    svg.selectAll("*").remove();
+    
+    // Show loading screen
+    loadingScreen.style.display = "flex";
+    updateProgress("Fetching root paper details...", 5);
+
+    const rootPaperDetails = await fetchPaperDetails(rootPaperId);
+    const root = {
+      id: rootPaperId,
+      title: rootPaperDetails.title || "Untitled Paper",
+      children: [],
+      level: 0
+    };
+
+    updateProgress("Building reference tree...", 15);
+    const referenceTree = await fetchReferences(rootPaperId, depth);
+    if (referenceTree) root.children = referenceTree.children;
+
+    // Build the graph data
+    updateProgress("Constructing graph data...", 95);
+    graphData = buildGraph(root);
+    console.log(JSON.stringify(graphData, null, 2));
+
+    // Render the graph with D3
+    updateProgress("Rendering graph...", 98);
+    const simulation = d3.forceSimulation(graphData.nodes)
+      .force("link", d3.forceLink(graphData.links).id(d => d.id).distance(150))
+      .force("charge", d3.forceManyBody().strength(-300))
+      .force("center", d3.forceCenter(width / 2, height / 2));
+
+    // Create zoom behavior
+    const zoom = d3.zoom()
+      .scaleExtent([0.1, 4])
+      .on("zoom", (event) => {
+        svg.selectAll("g").attr("transform", event.transform);
+      });
+
+    // Apply zoom to SVG
+    svg.call(zoom);
+    
+    // Create container group for zoom
+    const container = svg.append("g");
+
+    const link = container.append("g")
+      .attr("class", "links")
+      .selectAll("line")
+      .data(graphData.links)
+      .enter().append("line")
+      .attr("class", "link");
+
+    const node = container.append("g")
+      .attr("class", "nodes")
+      .selectAll("circle")
+      .data(graphData.nodes)
+      .enter().append("circle")
+      .attr("class", d => {
+        let classes = "node";
+        if (d.id === rootPaperId) {
+          classes += " root-node";
+        } else {
+          classes += ` node-level-${d.level}`;
+        }
+        return classes;
+      })
+      .attr("r", d => d.id === rootPaperId ? 12 : 8)
+      .style("cursor", "pointer") // Add pointer cursor to indicate clickability
+      .on("mouseover", function(event, d) {
+        // Highlight node
+        d3.select(this)
+          .transition()
+          .duration(200)
+          .attr("r", d.id === rootPaperId ? 16 : 12);
+          
+        // Show tooltip
+        tooltip.html(`<strong>${d.title}</strong><br><span style="font-size: 12px; opacity: 0.8;">(Click to copy title)</span>`)
+          .style("left", (event.pageX + 10) + "px")
+          .style("top", (event.pageY - 28) + "px")
+          .style("opacity", 1);
+          
+        // Highlight connected links and nodes
+        link.style("stroke-opacity", l => 
+          (l.source.id === d.id || l.target.id === d.id) ? 1 : 0.2
+        );
+        link.style("stroke-width", l => 
+          (l.source.id === d.id || l.target.id === d.id) ? 3 : 1
+        );
+        node.style("opacity", n => 
+          (n.id === d.id || graphData.links.some(l => 
+            (l.source.id === d.id && l.target.id === n.id) || 
+            (l.target.id === d.id && l.source.id === n.id)
+          )) ? 1 : 0.5
+        );
+        
+        // Hide all labels except for the hovered node and its connections
+        text.style("opacity", t => 
+          (t.id === d.id || graphData.links.some(l => 
+            (l.source.id === d.id && l.target.id === t.id) || 
+            (l.target.id === d.id && l.source.id === t.id)
+          )) ? 1 : 0.2
+        );
+      })
+      .on("mouseout", function() {
+        // Reset node
+        d3.select(this)
+          .transition()
+          .duration(200)
+          .attr("r", d => d.id === rootPaperId ? 12 : 8);
+          
+        // Hide tooltip
+        tooltip.style("opacity", 0);
+        
+        // Reset all links and nodes
+        link.style("stroke-opacity", 0.6);
+        link.style("stroke-width", 1.5);
+        node.style("opacity", 1);
+        text.style("opacity", 1);
+      })
+      .on("click", function(event, d) {
+        // Copy the title to clipboard
+        if (d.title && d.title.trim() !== "") {
+          copyToClipboard(d.title);
+          
+          // Add visual feedback (pulse effect)
+          d3.select(this)
+            .transition()
+            .duration(100)
+            .attr("r", d.id === rootPaperId ? 18 : 14)
+            .transition()
+            .duration(200)
+            .attr("r", d.id === rootPaperId ? 12 : 8);
+        }
+      })
+      .call(drag(simulation));
+
+    // Add visible text only for nodes with short titles by default
+    const text = container.append("g")
+      .attr("class", "labels")
+      .selectAll("text")
+      .data(graphData.nodes)
+      .enter().append("text")
+      .attr("class", "label")
+      .attr("dx", 12)
+      .attr("dy", ".35em")
+      .style("cursor", "pointer") // Add pointer cursor
+      .text(d => d.title.length > 25 ? d.title.substring(0, 25) + "..." : d.title)
+      .on("click", function(event, d) {
+        // Also allow copying by clicking the text label
+        if (d.title && d.title.trim() !== "") {
+          copyToClipboard(d.title);
+          
+          // Add visual feedback
+          d3.select(this)
+            .style("font-weight", "bold")
+            .transition()
+            .duration(500)
+            .style("font-weight", "normal");
+        }
+      });
+
+    simulation.on("tick", () => {
+      link.attr("x1", d => d.source.x)
+          .attr("y1", d => d.source.y)
+          .attr("x2", d => d.target.x)
+          .attr("y2", d => d.target.y);
+      node.attr("cx", d => d.x)
+          .attr("cy", d => d.y);
+      text.attr("x", d => d.x)
+          .attr("y", d => d.y);
+    });
+    updateProgress("Complete!", 100);
+    setTimeout(() => {
+      loadingScreen.style.display = "none";
+    }, 500);
+  }
+
+  function drag(simulation) {
+    function dragstarted(event, d) {
+      if (!event.active) simulation.alphaTarget(0.3).restart();
+      d.fx = d.x;
+      d.fy = d.y;
+    }
+    function dragged(event, d) {
+      d.fx = event.x;
+      d.fy = event.y;
+    }
+    function dragended(event, d) {
+      if (!event.active) simulation.alphaTarget(0);
+      d.fx = null;
+      d.fy = null;
+    }
+    return d3.drag()
+      .on("start", dragstarted)
+      .on("drag", dragged)
+      .on("end", dragended);
+  }
+
+  initGraph();
+});
+  </script>
+</body>
+</html>
