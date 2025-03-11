@@ -282,8 +282,7 @@ document.addEventListener("DOMContentLoaded", function() {
                 .transition()
                 .style("opacity", "1")
                 .duration(300);
-
-            setTimeout(() => {
+                setTimeout(() => {
                 saveConfirmation
                     .transition()
                     .style("opacity", "0")
@@ -393,19 +392,27 @@ document.addEventListener("DOMContentLoaded", function() {
   }
 
   // Fetch paper details by paperId with caching
-   async function fetchPaperDetails(paperId) {
+  // Only use direct API call for root node
+  async function fetchPaperDetails(paperId, isRoot = false) {
     if (cache[paperId]) return cache[paperId];
-    try {
-      const response = await queueRequest(`https://api.semanticscholar.org/graph/v1/paper/${paperId}`);
-      if (response.error) throw response.error;
-      const data = response.data;
-      if (!data.title) data.title = "";
-      cache[paperId] = data;
-      return data;
-    } catch (error) {
-      console.warn(`No data available for paper ID: ${paperId}`);
-      cache[paperId] = { paperId, title: "" };
-      return cache[paperId];
+    
+    // Only make direct API call for root node
+    if (isRoot) {
+      try {
+        const response = await queueRequest(`https://api.semanticscholar.org/graph/v1/paper/${paperId}`);
+        if (response.error) throw response.error;
+        const data = response.data;
+        if (!data.title) data.title = "";
+        cache[paperId] = data;
+        return data;
+      } catch (error) {
+        console.warn(`No data available for paper ID: ${paperId}`);
+        cache[paperId] = { paperId, title: "" };
+        return cache[paperId];
+      }
+    } else {
+      // For non-root nodes, return basic cached info
+      return { paperId, title: "" };
     }
   }
 
@@ -421,17 +428,29 @@ document.addEventListener("DOMContentLoaded", function() {
       const apiData = response.data;
       const node = { id: paperId, title: "", children: [], level: currentLevel };
       
+      // Pre-cache paper details from the references API response
+      for (const item of apiData.data) {
+        const childPaperId = item.citedPaper.paperId;
+        const childTitle = item.citedPaper.title || "";
+        
+        // Cache basic paper details to avoid additional API calls
+        if (!cache[childPaperId]) {
+          cache[childPaperId] = { paperId: childPaperId, title: childTitle };
+        }
+      }
+      
       // Process references sequentially rather than in parallel to avoid overwhelming the API
       for (let i = 0; i < apiData.data.length; i++) {
         const item = apiData.data[i];
         const childPaperId = item.citedPaper.paperId;
-        const childDetails = await fetchPaperDetails(childPaperId);
+        // Use the title from the cached reference data
+        const childTitle = cache[childPaperId]?.title || item.citedPaper.title || "";
         const childNode = await fetchReferences(childPaperId, depth - 1, currentLevel + 1);
         
-        if (childDetails.title || (childNode && childNode.children.length > 0)) {
+        if (childTitle || (childNode && childNode.children.length > 0)) {
           node.children.push({
             id: childPaperId,
-            title: childDetails.title || "",
+            title: childTitle,
             children: childNode ? childNode.children : [],
             level: currentLevel + 1
           });
@@ -480,7 +499,8 @@ document.addEventListener("DOMContentLoaded", function() {
     loadingScreen.style.display = "flex";
     updateProgress("Fetching root paper details...", 5);
 
-    const rootPaperDetails = await fetchPaperDetails(rootPaperId);
+    // Use direct API call only for root paper
+    const rootPaperDetails = await fetchPaperDetails(rootPaperId, true);
     const root = {
       id: rootPaperId,
       title: rootPaperDetails.title || "Untitled Paper",
@@ -523,7 +543,7 @@ document.addEventListener("DOMContentLoaded", function() {
       .data(graphData.links)
       .enter().append("line")
       .attr("class", "link");
-
+      
     const node = container.append("g")
       .attr("class", "nodes")
       .selectAll("circle")
