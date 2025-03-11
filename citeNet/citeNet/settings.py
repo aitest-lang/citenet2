@@ -25,9 +25,8 @@ ALLOWED_HOSTS = ['citenet2.onrender.com']
 SECRET_KEY = 'django-insecure-t+k0nu-6^9-+c(^p$)l$wzw)%+&p#80qsf@cto6s%l^a+ub=5f'
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = False
 
-ALLOWED_HOSTS = []
 
 
 # Application definition
@@ -79,7 +78,9 @@ WSGI_APPLICATION = 'citeNet.wsgi.application'
 # https://docs.djangoproject.com/en/5.1/ref/settings/#databases
 
 DATABASES = {
-    "default": dj_database_url.parse(os.environ.get("DATABASE_URL"))
+    'default': dj_database_url.config(
+        default=os.environ.get('DATABASE_URL')
+    )
 }
 
 
