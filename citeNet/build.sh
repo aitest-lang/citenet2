@@ -14,4 +14,3 @@ python manage.py migrate
 python manage.py createsuperuser --noinput --username raviteja --email ravi@gmail.com
 
 # Set the superuser password
-python manage.py set_superuser_password
