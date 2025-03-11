@@ -5,7 +5,7 @@ class Command(BaseCommand):
     help = 'Set the superuser password'
 
     def handle(self, *args, **kwargs):
-        username = 'ravi'
+        username = 'raviteja'
         password = 'ravi'
         try:
             user = User.objects.get(username=username)
