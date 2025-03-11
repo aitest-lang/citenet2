@@ -11,6 +11,6 @@ python manage.py collectstatic --noinput
 python manage.py migrate
 
 # Create a superuser if it doesn't exist
-python manage.py createsuperuser --noinput --username raviteja --email ravi@gmail.com
+
 
 # Set the superuser password
